@@ -52,4 +52,65 @@ describe("two_sided_marketplace", () => {
     assert.equal(vendorAccount.description, description);
     assert.equal(vendorAccount.active, true);
   });
+  it("Mints a service NFT", async () => {
+    // Generate a new keypair for the vendor
+    const vendor = anchor.web3.Keypair.generate();
+
+    // Airdrop some SOL to the vendor
+    const airdropSignature = await provider.connection.requestAirdrop(
+      vendor.publicKey,
+      1000000000 // 1 SOL
+    );
+    await provider.connection.confirmTransaction(airdropSignature);
+
+    // Generate a new keypair for the service NFT
+    const serviceNft = anchor.web3.Keypair.generate();
+
+    const metadata = "Test Service NFT";
+    const price = new anchor.BN(1000000); // 1 SOL in lamports
+    const is_soulbound = false;
+
+    await program.methods
+      .mintServiceNft(metadata, price, is_soulbound)
+      .accounts({
+        serviceNft: serviceNft.publicKey,
+        vendor: vendor.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([serviceNft, vendor])
+      .rpc();
+
+    // Fetch the created service NFT account
+
+    const serviceNftAccount = await program.account.serviceNft.fetch(
+      serviceNft.publicKey
+    );
+
+    console.log(
+      "Service NFT Account:",
+      JSON.stringify(serviceNftAccount, null, 2)
+    );
+    console.log("isSoulbound:", serviceNftAccount.isSoulbound);
+    console.log("typeof isSoulbound:", typeof serviceNftAccount.isSoulbound);
+
+    assert.ok(
+      serviceNftAccount.vendor.equals(vendor.publicKey),
+      "Vendor mismatch"
+    );
+    assert.equal(serviceNftAccount.metadata, metadata, "Metadata mismatch");
+    assert.equal(
+      serviceNftAccount.price.toNumber(),
+      price.toNumber(),
+      "Price mismatch"
+    );
+    assert.equal(
+      serviceNftAccount.isSoulbound,
+      is_soulbound,
+      "Soulbound flag mismatch"
+    ); // Change to camelCase
+    assert.ok(
+      serviceNftAccount.owner.equals(vendor.publicKey),
+      "Owner mismatch"
+    );
+  });
 });
