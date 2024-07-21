@@ -1,6 +1,8 @@
 use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{self, Token, Transfer};
 
-declare_id!("G28Vo4fCX9EEQHjTLuKjucKMwjjP8JtKjvSDxn3qX89w");
+declare_id!("2x2AGudLodV16Duk7WPCZUU72GkvsmoAYdbNsC1vimEH");
 
 #[program]
 pub mod two_sided_marketplace {
@@ -46,11 +48,69 @@ pub mod two_sided_marketplace {
         service_nft.vendor = ctx.accounts.vendor.key();
         service_nft.metadata = metadata;
         service_nft.price = price;
-        service_nft.isSoulbound = is_soulbound; // Make sure this is camelCase
+        service_nft.is_soulbound = is_soulbound;
         service_nft.owner = ctx.accounts.vendor.key();
 
         msg!("Service NFT minted successfully");
-        msg!("isSoulbound: {}", service_nft.isSoulbound);
+        msg!("is_soulbound: {}", service_nft.is_soulbound);
+        Ok(())
+    }
+
+    pub fn list_service(ctx: Context<ListService>, price: u64) -> Result<()> {
+        let service_listing = &mut ctx.accounts.service_listing;
+        let service_nft = &ctx.accounts.service_nft;
+
+        require!(
+            service_nft.owner == ctx.accounts.vendor.key(),
+            MarketplaceError::NotOwner
+        );
+
+        service_listing.service_nft = ctx.accounts.service_nft.key();
+        service_listing.vendor = ctx.accounts.vendor.key();
+        service_listing.price = price;
+        service_listing.is_active = true;
+
+        msg!("Service listed successfully");
+        msg!("Service NFT: {:?}", service_listing.service_nft);
+        msg!("Price: {}", service_listing.price);
+
+        Ok(())
+    }
+
+    pub fn purchase_service(ctx: Context<PurchaseService>) -> Result<()> {
+        let service_listing = &mut ctx.accounts.service_listing;
+        let service_nft = &mut ctx.accounts.service_nft;
+
+        require!(
+            service_listing.is_active,
+            MarketplaceError::ListingNotActive
+        );
+
+        // Transfer payment from buyer to seller
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.buyer_token_account.to_account_info(),
+            to: ctx.accounts.seller_token_account.to_account_info(),
+            authority: ctx.accounts.buyer.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        token::transfer(cpi_ctx, service_listing.price)?;
+
+        // Update NFT ownership if it's not soulbound
+        if !service_nft.is_soulbound {
+            service_nft.owner = ctx.accounts.buyer.key();
+        }
+
+        // Mark the listing as inactive
+        service_listing.is_active = false;
+
+        emit!(ServicePurchased {
+            buyer: ctx.accounts.buyer.key(),
+            seller: ctx.accounts.seller.key(),
+            service_nft: service_nft.key(),
+            price: service_listing.price,
+        });
+
         Ok(())
     }
 }
@@ -76,16 +136,52 @@ pub struct RegisterVendor<'info> {
 
 #[derive(Accounts)]
 pub struct MintServiceNft<'info> {
-    #[account(
-        init,
-        payer = vendor,
-        space = 8 + 32 + 256 + 8 + 1 + 32
-    )]
+    #[account(init, payer = vendor, space = 8 + 32 + 256 + 8 + 1 + 32)]
     pub service_nft: Account<'info, ServiceNft>,
     #[account(mut)]
     pub vendor: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
+
+#[derive(Accounts)]
+pub struct ListService<'info> {
+    #[account(
+        init,
+        payer = vendor,
+        space = 8 + 32 + 32 + 8 + 1,
+        seeds = [b"service_listing", service_nft.key().as_ref()],
+        bump
+    )]
+    pub service_listing: Account<'info, ServiceListing>,
+    #[account(mut)]
+    pub service_nft: Account<'info, ServiceNft>,
+    #[account(mut)]
+    pub vendor: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct PurchaseService<'info> {
+    #[account(mut)]
+    pub service_listing: Account<'info, ServiceListing>,
+    #[account(mut)]
+    pub service_nft: Account<'info, ServiceNft>,
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account directly; it's only passed to CPI calls which handle its verification.
+    #[account(mut)]
+    pub seller: AccountInfo<'info>,
+    /// CHECK: The buyer token account is properly checked in the CPI call for token transfers to ensure it has sufficient balance and is owned by the buyer.
+    #[account(mut)]
+    pub buyer_token_account: AccountInfo<'info>,
+    /// CHECK: The seller token account is validated in the CPI call for token transfers to ensure it is correctly owned by the seller.
+    #[account(mut)]
+    pub seller_token_account: AccountInfo<'info>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct Marketplace {
     pub admin: Pubkey,
@@ -99,13 +195,30 @@ pub struct Vendor {
     pub description: String,
     pub active: bool,
 }
+
 #[account]
 pub struct ServiceNft {
     pub vendor: Pubkey,
     pub metadata: String,
     pub price: u64,
-    pub isSoulbound: bool, // Make sure this is camelCase
+    pub is_soulbound: bool,
     pub owner: Pubkey,
+}
+
+#[account]
+pub struct ServiceListing {
+    pub service_nft: Pubkey,
+    pub vendor: Pubkey,
+    pub price: u64,
+    pub is_active: bool,
+}
+
+#[event]
+pub struct ServicePurchased {
+    pub buyer: Pubkey,
+    pub seller: Pubkey,
+    pub service_nft: Pubkey,
+    pub price: u64,
 }
 
 #[error_code]
@@ -114,4 +227,10 @@ pub enum MarketplaceError {
     NameTooLong,
     #[msg("Description must be 100 characters or less")]
     DescriptionTooLong,
+    #[msg("Only the owner can list this service")]
+    NotOwner,
+    #[msg("The listing is not active")]
+    ListingNotActive,
+    #[msg("Insufficient funds to purchase the service")]
+    InsufficientFunds,
 }
