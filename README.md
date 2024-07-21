@@ -1,6 +1,3 @@
-Sure! Below is a detailed README file that documents the functionality of your `two_sided_marketplace` Solana program and the corresponding test code without printing the entire function implementations.
-
-````markdown
 # Two-Sided Marketplace on Solana
 
 This project implements a two-sided marketplace on the Solana blockchain where vendors can list services as NFTs and buyers can purchase them. The marketplace supports both soulbound and non-soulbound NFTs and includes mechanisms for transferring payments and updating ownership.
@@ -118,8 +115,7 @@ The project includes the following key features:
    ```bash
    anchor build
    anchor deploy
-   ```
-````
+
 
 3. **Run Tests**
    ```bash
@@ -139,7 +135,4 @@ ANCHOR_WALLET=/path/to/your/solana/wallet.json
 
 This two-sided marketplace on Solana enables vendors to list services as NFTs and buyers to purchase them securely. The provided smart contract and test suite ensure the marketplace's functionality and reliability.
 
-```
 
-This README provides a detailed overview of your Solana program's functionality, test cases, and setup instructions. You can add this to your GitHub repository to help users understand and use your marketplace.
-```
