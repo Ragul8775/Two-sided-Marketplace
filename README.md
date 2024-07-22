@@ -1,138 +1,228 @@
-# Two-Sided Marketplace on Solana
+# Two-Sided Marketplace
 
-This project implements a two-sided marketplace on the Solana blockchain where vendors can list services as NFTs and buyers can purchase them. The marketplace supports both soulbound and non-soulbound NFTs and includes mechanisms for transferring payments and updating ownership.
+This is a Solana-based decentralized marketplace where vendors can list their services as NFTs, and consumers can purchase them. The marketplace supports both soulbound and non-soulbound NFTs and includes a royalty mechanism.
 
-## Overview
+## Functions
 
-The project includes the following key features:
+### Initialize Marketplace
 
-- Initialize the marketplace
-- Register vendors
-- Mint service NFTs
-- List services for sale
-- Purchase services
+**Description**: Initializes the marketplace with a base royalty rate.
 
-## Smart Contract (Rust)
+**Signature**:
 
-### Functions
-
-1. **initialize_marketplace**
-   Initializes the marketplace with an admin and a base royalty rate. This function sets the admin's public key and the base royalty rate.
-
-2. **register_vendor**
-   Registers a new vendor by storing the owner's public key, vendor name, and description. This function also ensures that the name and description lengths are within specified limits.
-
-3. **mint_service_nft**
-   Mints a new service NFT for a vendor with specified metadata, price, and a flag indicating if it is soulbound. This function sets the vendor's public key as the owner of the NFT.
-
-4. **list_service**
-   Lists a service NFT for sale by creating a service listing with the specified price. This function ensures that the vendor owns the NFT before listing it.
-
-5. **purchase_service**
-   Allows a buyer to purchase a listed service. This function transfers the payment from the buyer to the seller and updates the NFT ownership if it is not soulbound. It also marks the listing as inactive.
-
-### Accounts
-
-- **InitializeMarketplace**
-
-  - `marketplace`: Stores the marketplace state.
-  - `admin`: The admin initializing the marketplace.
-  - `system_program`: Solana system program.
-
-- **RegisterVendor**
-
-  - `vendor`: Stores the vendor state.
-  - `owner`: The vendor's owner.
-  - `system_program`: Solana system program.
-
-- **MintServiceNft**
-
-  - `service_nft`: Stores the service NFT state.
-  - `vendor`: The vendor minting the NFT.
-  - `system_program`: Solana system program.
-
-- **ListService**
-
-  - `service_listing`: Stores the service listing state.
-  - `service_nft`: The NFT being listed.
-  - `vendor`: The vendor listing the service.
-  - `system_program`: Solana system program.
-
-- **PurchaseService**
-  - `service_listing`: Stores the service listing state.
-  - `service_nft`: The NFT being purchased.
-  - `buyer`: The buyer purchasing the service.
-  - `seller`: The vendor selling the service.
-  - `buyer_token_account`: Token account of the buyer.
-  - `seller_token_account`: Token account of the seller.
-  - `token_program`: Token program.
-  - `system_program`: Solana system program.
-
-### Events
-
-- **ServicePurchased**
-  - `buyer`: The public key of the buyer.
-  - `seller`: The public key of the seller.
-  - `service_nft`: The public key of the purchased NFT.
-  - `price`: The purchase price.
-
-### Errors
-
-- **MarketplaceError**
-  - `NameTooLong`: Name exceeds the allowed length.
-  - `DescriptionTooLong`: Description exceeds the allowed length.
-  - `NotOwner`: Only the owner can list the service.
-  - `ListingNotActive`: The listing is not active.
-  - `InsufficientFunds`: Insufficient funds to purchase the service.
-
-## Test Suite (JavaScript)
-
-### Test Cases
-
-1. **Initializes the marketplace**
-   Tests the `initialize_marketplace` function by creating a new marketplace and verifying the admin and base royalty rate.
-
-2. **Registers a vendor**
-   Tests the `register_vendor` function by creating a new vendor and verifying the vendor's details.
-
-3. **Mints a service NFT**
-   Tests the `mint_service_nft` function by minting a new NFT and verifying the NFT's details.
-
-4. **Lists a service**
-   Tests the `list_service` function by listing a previously minted NFT and verifying the listing details.
-
-5. **Purchases a service**
-   Tests the `purchase_service` function by purchasing a listed NFT and verifying the payment transfer and NFT ownership update.
-
-## Setup and Deployment
-
-1. **Prerequisites**
-
-   - Install Rust and Solana CLI.
-   - Install Anchor framework.
-
-2. **Build and Deploy**
-   ```bash
-   anchor build
-   anchor deploy
-
-
-3. **Run Tests**
-   ```bash
-   anchor test
-   ```
-
-## Environment Variables
-
-Create a `.env` file in the root directory and add the following environment variables:
-
-```env
-ANCHOR_PROVIDER_URL=https://api.devnet.solana.com
-ANCHOR_WALLET=/path/to/your/solana/wallet.json
+```rust
+pub fn initialize_marketplace(
+    ctx: Context<InitializeMarketplace>,
+    base_royalty_rate: u8,
+) -> Result<()>;
 ```
 
-## Conclusion
+**Parameters**:
 
-This two-sided marketplace on Solana enables vendors to list services as NFTs and buyers to purchase them securely. The provided smart contract and test suite ensure the marketplace's functionality and reliability.
+- `ctx`: Context of `InitializeMarketplace`.
+- `base_royalty_rate`: The base royalty rate for the marketplace.
 
+### Register Vendor
 
+**Description**: Registers a new vendor in the marketplace.
+
+**Signature**:
+
+```rust
+pub fn register_vendor(
+    ctx: Context<RegisterVendor>,
+    name: String,
+    description: String,
+) -> Result<()>;
+```
+
+**Parameters**:
+
+- `ctx`: Context of `RegisterVendor`.
+- `name`: The name of the vendor.
+- `description`: A brief description of the vendor.
+
+### Mint Service NFT
+
+**Description**: Mints a new service NFT.
+
+**Signature**:
+
+```rust
+pub fn mint_service_nft(
+    ctx: Context<MintServiceNft>,
+    metadata: String,
+    price: u64,
+    is_soulbound: bool,
+    royalty_rate: u8,
+) -> Result<()>;
+```
+
+**Parameters**:
+
+- `ctx`: Context of `MintServiceNft`.
+- `metadata`: Metadata for the service NFT.
+- `price`: Price of the service NFT.
+- `is_soulbound`: Indicates if the NFT is soulbound.
+- `royalty_rate`: The royalty rate for the vendor.
+
+### List Service
+
+**Description**: Lists a service NFT for sale.
+
+**Signature**:
+
+```rust
+pub fn list_service(ctx: Context<ListService>, price: u64) -> Result<()>;
+```
+
+**Parameters**:
+
+- `ctx`: Context of `ListService`.
+- `price`: Listing price of the service NFT.
+
+### Purchase Service
+
+**Description**: Purchases a listed service NFT.
+
+**Signature**:
+
+```rust
+pub fn purchase_service(ctx: Context<PurchaseService>) -> Result<()>;
+```
+
+**Parameters**:
+
+- `ctx`: Context of `PurchaseService`.
+
+### Transfer Service NFT
+
+**Description**: Transfers a non-soulbound service NFT to a new owner.
+
+**Signature**:
+
+```rust
+pub fn transfer_service_nft(ctx: Context<TransferServiceNft>) -> Result<()>;
+```
+
+**Parameters**:
+
+- `ctx`: Context of `TransferServiceNft`.
+
+### Resell Service NFT
+
+**Description**: Resells a non-soulbound service NFT with royalties.
+
+**Signature**:
+
+```rust
+pub fn resell_service_nft(ctx: Context<ResellServiceNft>, new_price: u64) -> Result<()>;
+```
+
+**Parameters**:
+
+- `ctx`: Context of `ResellServiceNft`.
+- `new_price`: The new price of the service NFT.
+
+## Errors
+
+### Marketplace Errors
+
+- `NameTooLong`: The name must be 50 characters or less.
+- `DescriptionTooLong`: The description must be 100 characters or less.
+- `NotOwner`: Only the owner can perform this action.
+- `ListingNotActive`: The listing is not active.
+- `InsufficientFunds`: Insufficient funds to purchase the service.
+- `SoulboundNonTransferable`: Soulbound NFTs cannot be transferred.
+
+## Events
+
+### Service Purchased
+
+Emitted when a service is purchased.
+
+**Structure**:
+
+```rust
+pub struct ServicePurchased {
+    pub buyer: Pubkey,
+    pub seller: Pubkey,
+    pub service_nft: Pubkey,
+    pub price: u64,
+}
+```
+
+### Service NFT Transferred
+
+Emitted when a service NFT is transferred.
+
+**Structure**:
+
+```rust
+pub struct ServiceNftTransferred {
+    pub service_nft: Pubkey,
+    pub from: Pubkey,
+    pub to: Pubkey,
+}
+```
+
+### Service NFT Resold
+
+Emitted when a service NFT is resold.
+
+**Structure**:
+
+```rust
+pub struct ServiceNftResold {
+    pub service_nft: Pubkey,
+    pub from: Pubkey,
+    pub to: Pubkey,
+    pub price: u64,
+    pub base_royalty: u64,
+    pub vendor_royalty: u64,
+}
+```
+
+## Tests
+
+### Initialize Marketplace
+
+**Description**: Tests initializing the marketplace with a base royalty rate.
+
+### Register Vendor
+
+**Description**: Tests registering a new vendor in the marketplace.
+
+### Mint Service NFT
+
+**Description**: Tests minting a new service NFT.
+
+### List Service
+
+**Description**: Tests listing a service NFT for sale.
+
+### Purchase Service
+
+**Description**: Tests purchasing a listed service NFT.
+
+### Transfer Service NFT
+
+**Description**: Tests transferring a non-soulbound service NFT to a new owner.
+
+### Resell Service NFT
+
+**Description**: Tests reselling a non-soulbound service NFT with royalties.
+
+**Test Case**:
+
+- Set up accounts and initialize the marketplace.
+- Mint and list a non-soulbound service NFT.
+- Purchase the listed service NFT.
+- Resell the purchased NFT and verify balance changes and royalties distribution.
+
+**Assertions**:
+
+- Ensure the original buyer receives the resell price minus royalties.
+- Ensure the new buyer's balance decreases by the full resell price.
+- Ensure the vendor receives their royalty.
+- Ensure the marketplace receives the base royalty.
