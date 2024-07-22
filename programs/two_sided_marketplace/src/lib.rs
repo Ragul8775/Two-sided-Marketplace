@@ -118,19 +118,15 @@ pub mod two_sided_marketplace {
     pub fn transfer_service_nft(ctx: Context<TransferServiceNft>) -> Result<()> {
         let service_nft = &mut ctx.accounts.service_nft;
 
-        // Check if the NFT is soulbound
         require!(
             !service_nft.is_soulbound,
             MarketplaceError::SoulboundNonTransferable
         );
 
-        // Check if the current owner is the one initiating the transfer
         require!(
             service_nft.owner == ctx.accounts.current_owner.key(),
             MarketplaceError::NotOwner
         );
-
-        // Transfer ownership
         service_nft.owner = ctx.accounts.new_owner.key();
 
         emit!(ServiceNftTransferred {
@@ -145,7 +141,6 @@ pub mod two_sided_marketplace {
         let service_nft = &mut ctx.accounts.service_nft;
         let marketplace = &ctx.accounts.marketplace;
 
-        // Ensure the NFT is not soulbound
         require!(
             !service_nft.is_soulbound,
             MarketplaceError::SoulboundNonTransferable
@@ -162,7 +157,6 @@ pub mod two_sided_marketplace {
         let vendor_royalty = (new_price as u128 * service_nft.royalty_rate as u128 / 100) as u64;
         let total_royalty = base_royalty + vendor_royalty;
 
-        // Transfer payment from buyer to seller
         let cpi_accounts = Transfer {
             from: ctx.accounts.buyer_token_account.to_account_info(),
             to: ctx.accounts.seller_token_account.to_account_info(),
@@ -228,7 +222,6 @@ pub struct RegisterVendor<'info> {
 #[derive(Accounts)]
 pub struct MintServiceNft<'info> {
     #[account(init, payer = vendor, space = 8 + 32 + 256 + 8 + 1 + 32 + 1)]
-    // Added 1 for royalty_rate
     pub service_nft: Account<'info, ServiceNft>,
     #[account(mut)]
     pub vendor: Signer<'info>,
@@ -329,7 +322,7 @@ pub struct ServiceNft {
     pub price: u64,
     pub is_soulbound: bool,
     pub owner: Pubkey,
-    pub royalty_rate: u8, // New field: royalty rate in percentage (0-100)
+    pub royalty_rate: u8,
 }
 
 #[account]

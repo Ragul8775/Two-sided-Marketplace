@@ -73,7 +73,7 @@ describe("two_sided_marketplace", () => {
     const serviceNft = anchor.web3.Keypair.generate();
 
     const metadata = "Test Service NFT";
-    const price = new anchor.BN(1000000); // 1 SOL in lamports
+    const price = new anchor.BN(1000000);
     const is_soulbound = false;
     const royalty_rate = 10; // 10%
 
@@ -374,7 +374,7 @@ describe("two_sided_marketplace", () => {
 
     const soulboundNft = anchor.web3.Keypair.generate();
     await program.methods
-      .mintServiceNft(metadata, price, true, 10) // isSoulbound = true
+      .mintServiceNft(metadata, price, true, 10)
       .accounts({
         serviceNft: soulboundNft.publicKey,
         vendor: currentOwner.publicKey,
@@ -458,7 +458,7 @@ describe("two_sided_marketplace", () => {
     );
     const marketplaceTokenAccount = await getOrCreateAssociatedTokenAccount(
       provider.connection,
-      vendor, // Using vendor as marketplace admin for simplicity
+      vendor,
       mint,
       vendor.publicKey
     );
@@ -566,7 +566,6 @@ describe("two_sided_marketplace", () => {
       .signers([originalBuyer, newBuyer])
       .rpc();
 
-    // Fetch updated accounts
     const updatedServiceNft = await program.account.serviceNft.fetch(
       serviceNft.publicKey
     );
