@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Token, Transfer};
 
-declare_id!("2x2AGudLodV16Duk7WPCZUU72GkvsmoAYdbNsC1vimEH");
+declare_id!("5Jqromwvmb9qsTSk2xcUCpFZAXH1Q7cSeE6gcvU2mSNS");
 
 #[program]
 pub mod two_sided_marketplace {
@@ -43,6 +43,7 @@ pub mod two_sided_marketplace {
         metadata: String,
         price: u64,
         is_soulbound: bool,
+        royalty_rate: u8,
     ) -> Result<()> {
         let service_nft = &mut ctx.accounts.service_nft;
         service_nft.vendor = ctx.accounts.vendor.key();
@@ -50,6 +51,7 @@ pub mod two_sided_marketplace {
         service_nft.price = price;
         service_nft.is_soulbound = is_soulbound;
         service_nft.owner = ctx.accounts.vendor.key();
+        service_nft.royalty_rate = royalty_rate;
 
         msg!("Service NFT minted successfully");
         msg!("is_soulbound: {}", service_nft.is_soulbound);
@@ -113,6 +115,95 @@ pub mod two_sided_marketplace {
 
         Ok(())
     }
+    pub fn transfer_service_nft(ctx: Context<TransferServiceNft>) -> Result<()> {
+        let service_nft = &mut ctx.accounts.service_nft;
+
+        // Check if the NFT is soulbound
+        require!(
+            !service_nft.is_soulbound,
+            MarketplaceError::SoulboundNonTransferable
+        );
+
+        // Check if the current owner is the one initiating the transfer
+        require!(
+            service_nft.owner == ctx.accounts.current_owner.key(),
+            MarketplaceError::NotOwner
+        );
+
+        // Transfer ownership
+        service_nft.owner = ctx.accounts.new_owner.key();
+
+        emit!(ServiceNftTransferred {
+            service_nft: service_nft.key(),
+            from: ctx.accounts.current_owner.key(),
+            to: ctx.accounts.new_owner.key(),
+        });
+
+        Ok(())
+    }
+    pub fn resell_service_nft(ctx: Context<ResellServiceNft>, new_price: u64) -> Result<()> {
+        let service_nft = &mut ctx.accounts.service_nft;
+        let marketplace = &ctx.accounts.marketplace;
+
+        // Ensure the NFT is not soulbound
+        require!(
+            !service_nft.is_soulbound,
+            MarketplaceError::SoulboundNonTransferable
+        );
+
+        // Ensure the current owner is the one reselling
+        require!(
+            service_nft.owner == ctx.accounts.current_owner.key(),
+            MarketplaceError::NotOwner
+        );
+
+        // Calculate royalties
+        let base_royalty = (new_price as u128 * marketplace.base_royalty_rate as u128 / 100) as u64;
+        let vendor_royalty = (new_price as u128 * service_nft.royalty_rate as u128 / 100) as u64;
+        let total_royalty = base_royalty + vendor_royalty;
+
+        // Transfer payment from buyer to seller
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.buyer_token_account.to_account_info(),
+            to: ctx.accounts.seller_token_account.to_account_info(),
+            authority: ctx.accounts.buyer.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program.clone(), cpi_accounts);
+        token::transfer(cpi_ctx, new_price - total_royalty)?;
+
+        // Transfer base royalty to marketplace
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.buyer_token_account.to_account_info(),
+            to: ctx.accounts.marketplace_token_account.to_account_info(),
+            authority: ctx.accounts.buyer.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(cpi_program.clone(), cpi_accounts);
+        token::transfer(cpi_ctx, base_royalty)?;
+
+        // Transfer vendor royalty
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.buyer_token_account.to_account_info(),
+            to: ctx.accounts.vendor_token_account.to_account_info(),
+            authority: ctx.accounts.buyer.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        token::transfer(cpi_ctx, vendor_royalty)?;
+
+        // Update NFT ownership
+        service_nft.owner = ctx.accounts.buyer.key();
+
+        emit!(ServiceNftResold {
+            service_nft: service_nft.key(),
+            from: ctx.accounts.current_owner.key(),
+            to: ctx.accounts.buyer.key(),
+            price: new_price,
+            base_royalty,
+            vendor_royalty,
+        });
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -136,7 +227,8 @@ pub struct RegisterVendor<'info> {
 
 #[derive(Accounts)]
 pub struct MintServiceNft<'info> {
-    #[account(init, payer = vendor, space = 8 + 32 + 256 + 8 + 1 + 32)]
+    #[account(init, payer = vendor, space = 8 + 32 + 256 + 8 + 1 + 32 + 1)]
+    // Added 1 for royalty_rate
     pub service_nft: Account<'info, ServiceNft>,
     #[account(mut)]
     pub vendor: Signer<'info>,
@@ -181,7 +273,41 @@ pub struct PurchaseService<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
-
+#[derive(Accounts)]
+pub struct TransferServiceNft<'info> {
+    #[account(mut)]
+    pub service_nft: Account<'info, ServiceNft>,
+    #[account(mut)]
+    pub current_owner: Signer<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    pub new_owner: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}
+#[derive(Accounts)]
+pub struct ResellServiceNft<'info> {
+    #[account(mut)]
+    pub service_nft: Account<'info, ServiceNft>,
+    pub marketplace: Account<'info, Marketplace>,
+    #[account(mut)]
+    pub current_owner: Signer<'info>,
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    pub vendor: AccountInfo<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    #[account(mut)]
+    pub buyer_token_account: AccountInfo<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    #[account(mut)]
+    pub seller_token_account: AccountInfo<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    #[account(mut)]
+    pub marketplace_token_account: AccountInfo<'info>,
+    /// CHECK: This is not dangerous because we don't read or write from this account
+    #[account(mut)]
+    pub vendor_token_account: AccountInfo<'info>,
+    pub token_program: Program<'info, Token>,
+}
 #[account]
 pub struct Marketplace {
     pub admin: Pubkey,
@@ -203,6 +329,7 @@ pub struct ServiceNft {
     pub price: u64,
     pub is_soulbound: bool,
     pub owner: Pubkey,
+    pub royalty_rate: u8, // New field: royalty rate in percentage (0-100)
 }
 
 #[account]
@@ -220,17 +347,33 @@ pub struct ServicePurchased {
     pub service_nft: Pubkey,
     pub price: u64,
 }
-
+#[event]
+pub struct ServiceNftTransferred {
+    pub service_nft: Pubkey,
+    pub from: Pubkey,
+    pub to: Pubkey,
+}
+#[event]
+pub struct ServiceNftResold {
+    pub service_nft: Pubkey,
+    pub from: Pubkey,
+    pub to: Pubkey,
+    pub price: u64,
+    pub base_royalty: u64,
+    pub vendor_royalty: u64,
+}
 #[error_code]
 pub enum MarketplaceError {
     #[msg("Name must be 50 characters or less")]
     NameTooLong,
     #[msg("Description must be 100 characters or less")]
     DescriptionTooLong,
-    #[msg("Only the owner can list this service")]
+    #[msg("Only the owner can perform this action")]
     NotOwner,
     #[msg("The listing is not active")]
     ListingNotActive,
     #[msg("Insufficient funds to purchase the service")]
     InsufficientFunds,
+    #[msg("Soulbound NFTs cannot be transferred")]
+    SoulboundNonTransferable,
 }
